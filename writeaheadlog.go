@@ -16,6 +16,8 @@ import (
 	"gitlab.com/NebulousLabs/errors"
 )
 
+const defaultBufferSize = 4 << 10 // 4 MB
+
 // WAL is a general purpose, high performance write-ahead-log for performing
 // ACID transactions to disk without sacrificing speed or latency more than
 // fundamentally required.
@@ -47,6 +49,10 @@ type WAL struct {
 	// wg is a WaitGroup that allows us to wait for the syncThread to finish to
 	// ensure a clean shutdown
 	wg sync.WaitGroup
+
+	// arenaLock/marshalArena controls the reusable byte buffer for marshaling updates
+	arenaLock sync.Mutex
+	marshalArena *bytes.Buffer
 
 	// dependencies are used to inject special behaviour into the wal by providing
 	// custom dependencies when the wal is created and calling deps.disrupt(setting).
@@ -384,4 +390,12 @@ func (w *WAL) CloseIncomplete() (int64, error) {
 func New(path string) ([]*Transaction, *WAL, error) {
 	// Create a wal with production dependencies
 	return newWal(path, &dependencyProduction{})
+}
+
+// EnableMarshalArena will use the arena for marshalling updates.
+func (w *WAL) EnableMarshalArena(bufferSize int) {
+	if bufferSize <= 0 {
+		bufferSize = defaultBufferSize
+	}
+	w.marshalArena = bytes.NewBuffer(make([]byte, 0, bufferSize))
 }

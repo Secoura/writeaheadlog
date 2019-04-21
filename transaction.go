@@ -178,27 +178,21 @@ func (t *Transaction) commit() error {
 }
 
 // marshalUpdates marshals the updates of a transaction
-func marshalUpdates(updates []Update) []byte {
-	// preallocate buffer of appropriate size
-	var size int
-	for _, u := range updates {
-		size += 1 + len(u.Name)
-		size += 8 + len(u.Instructions)
+func marshalUpdates(updates []Update, buf *bytes.Buffer) []byte {
+	if buf == nil {
+		buf = new(bytes.Buffer)
 	}
-	buf := make([]byte, size)
-
-	var n int
 	for _, u := range updates {
 		// u.Name
-		buf[n] = byte(len(u.Name))
-		n++
-		n += copy(buf[n:], u.Name)
+		buf.WriteByte(byte(len(u.Name)))
+		buf.WriteString(u.Name)
 		// u.Instructions
-		binary.LittleEndian.PutUint64(buf[n:], uint64(len(u.Instructions)))
-		n += 8
-		n += copy(buf[n:], u.Instructions)
+		instLen := make([]byte, 8)
+		binary.LittleEndian.PutUint64(instLen, uint64(len(u.Instructions)))
+		buf.Write(instLen)
+		buf.Write(u.Instructions)
 	}
-	return buf
+	return buf.Bytes()
 }
 
 // nextPrefix is a helper function that reads the next prefix of prefixLen and
@@ -265,11 +259,15 @@ func unmarshalUpdates(data []byte) ([]Update, error) {
 // threadedInitTransaction reserves pages of the wal, marshals the
 // transactions's updates into a payload, and splits the payload equally among
 // the pages. It then writes the transaction metadata and pages to disk.
-func threadedInitTransaction(t *Transaction) {
+func threadedInitTransaction(t *Transaction, bufArena *bytes.Buffer, lock *sync.Mutex) {
+	if lock != nil {
+		lock.Lock()
+		defer lock.Unlock()
+	}
 	defer close(t.initComplete)
 
 	// Marshal all the updates to get their total length on disk
-	data := marshalUpdates(t.Updates)
+	data := marshalUpdates(t.Updates, bufArena)
 
 	// Get the pages from the wal and set the status
 	//
@@ -367,7 +365,14 @@ func (t *Transaction) append(updates []Update) (err error) {
 	}
 
 	// Marshal the data
-	data := marshalUpdates(updates)
+	var data []byte
+	if t.wal.marshalArena != nil {
+		t.wal.arenaLock.Lock()
+		data = marshalUpdates(updates, t.wal.marshalArena)
+		t.wal.arenaLock.Unlock()
+	} else {
+		data = marshalUpdates(updates, nil)
+	}
 
 	// Find last page, to which we will append
 	lastPage := t.firstPage
@@ -517,7 +522,11 @@ func (w *WAL) NewTransaction(updates []Update) (*Transaction, error) {
 
 	// Initialize the transaction by splitting up the payload among free pages
 	// and writing them to disk.
-	go threadedInitTransaction(txn)
+	if w.marshalArena != nil {
+		go threadedInitTransaction(txn, w.marshalArena, &w.arenaLock)
+	} else {
+		go threadedInitTransaction(txn, nil, nil)
+	}
 
 	// Increase the number of active transaction
 	atomic.AddInt64(&w.atomicUnfinishedTxns, 1)

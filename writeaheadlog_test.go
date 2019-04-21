@@ -1,6 +1,7 @@
 package writeaheadlog
 
 import (
+	"bytes"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -147,6 +148,7 @@ func TestMisleadingWrite(t *testing.T) {
 }
 
 func BenchmarkMarshalUpdates(b *testing.B) {
+	buf := new(bytes.Buffer)
 	updates := make([]Update, 100)
 	for i := range updates {
 		updates[i] = Update{
@@ -157,11 +159,12 @@ func BenchmarkMarshalUpdates(b *testing.B) {
 	b.ResetTimer()
 	b.ReportAllocs()
 	for i := 0; i < b.N; i++ {
-		marshalUpdates(updates)
+		marshalUpdates(updates, buf)
 	}
 }
 
 func BenchmarkUnmarshalUpdates(b *testing.B) {
+	buf := new(bytes.Buffer)
 	updates := make([]Update, 100)
 	for i := range updates {
 		updates[i] = Update{
@@ -169,7 +172,7 @@ func BenchmarkUnmarshalUpdates(b *testing.B) {
 			Instructions: fastrand.Bytes(1234),
 		}
 	}
-	data := marshalUpdates(updates)
+	data := marshalUpdates(updates, buf)
 	b.ResetTimer()
 	b.ReportAllocs()
 	for i := 0; i < b.N; i++ {
