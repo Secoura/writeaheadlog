@@ -16,7 +16,7 @@ import (
 	"gitlab.com/NebulousLabs/errors"
 )
 
-const defaultBufferSize = 4 << 10 // 4 MB
+const defaultBufferSize = 4 << 20 // 4 MB
 
 // WAL is a general purpose, high performance write-ahead-log for performing
 // ACID transactions to disk without sacrificing speed or latency more than
