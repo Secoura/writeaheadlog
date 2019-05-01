@@ -182,6 +182,8 @@ func marshalUpdates(updates []Update, buf *bytes.Buffer) []byte {
 	if buf == nil {
 		buf = new(bytes.Buffer)
 	}
+	buf.Reset()
+
 	for _, u := range updates {
 		// u.Name
 		buf.WriteByte(byte(len(u.Name)))
